@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Личный кабинет</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+</head>
+<body>
+
+    <div class="cabinet-card">
+        <div class="cabinet-header">
+            <div class="avatar">ИИ</div>
+            <h2>Личный кабинет</h2>
+            <p>Управляйте своим профилем и балансом</p>
+        </div>
+
+        <div class="form-group">
+            <label>Имя пользователя</label>
+            <div class="static-value">{{ user.username }}</div>
+        </div>
+
+        <div class="form-group">
+            <label>Email</label>
+            <div class="static-value">{{ user.email if user.email else 'Не указан' }}</div>
+        </div>
+
+        <div class="balance-card">
+            <div class="balance-info">
+                <span class="balance-label">Текущий баланс</span>
+                <span class="balance-value" id="balance-display">{{ user.balance }}<span class="currency">₽</span></span>
+            </div>
+            <div class="balance-icon">
+                <svg viewBox="0 0 24 24">
+                    <rect x="2" y="6" width="20" height="14" rx="2" ry="2"></rect>
+                    <path d="M2 10h20"></path>
+                    <circle cx="17" cy="15" r="1.5" fill="#ff7a68" stroke="none"></circle>
+                </svg>
+            </div>
+        </div>
+
+        <button type="button" class="btn btn-primary" id="topup-btn" style="margin-bottom: 12px;">
+            <svg viewBox="0 0 24 24">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Пополнить баланс
+        </button>
+
+        <button type="button" class="btn btn-primary btn-coral" id="open-chat-btn" style="margin-bottom: 12px;">
+            <svg viewBox="0 0 24 24">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            Чат с ИИ (-3 ₽ за сообщение)
+        </button>
+
+        <button type="button" class="btn btn-primary btn-mint" id="history-btn" onclick="window.location.href='/history';">
+            <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9"></circle>
+                <polyline points="12 7 12 12 15 14"></polyline>
+            </svg>
+            История операций
+        </button>
+
+        <div class="switch-link">
+            <a href="/logout">Выйти из аккаунта</a>
+        </div>
+    </div>
+
+    <div id="topupModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Пополнение баланса</h3>
+                <span class="close">&times;</span>
+            </div>
+            <input type="number" class="amount-input" id="amount-input" placeholder="Введите сумму" min="1" max="10000">
+            <div class="quick-amounts">
+                <button class="quick-btn" data-amount="100">100 ₽</button>
+                <button class="quick-btn" data-amount="500">500 ₽</button>
+                <button class="quick-btn" data-amount="1000">1000 ₽</button>
+            </div>
+            <button type="button" class="btn btn-primary" id="confirm-topup">Пополнить</button>
+        </div>
+    </div>
+
+    <div id="chatModal" class="modal">
+        <div class="modal-content chat-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h3>Чат с ИИ</h3>
+                    <div class="chat-hint">Локальная модель · каждое сообщение — 3 ₽</div>
+                </div>
+                <span class="chat-close" id="chat-close" title="Закрыть">&times;</span>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-empty" id="chat-empty">Напишите сообщение, чтобы начать диалог</div>
+            </div>
+            <div class="chat-form">
+                <textarea id="chat-input" class="chat-input" rows="1" maxlength="2000"
+                          placeholder="Ваше сообщение… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+                <button type="button" class="btn btn-primary chat-send" id="chat-send">Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.js" integrity="sha512-+k1pnlgt4F1H8L7t3z95o3/KO+o78INEcXTbnoJQ/F2VqDVhWoaiVml/OEHv9HsVgxUaVW+IbiZPUJQfF/YxZw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+    (function () {
+        var modal = document.getElementById('chatModal');
+        var box = document.getElementById('chat-messages');
+        var empty = document.getElementById('chat-empty');
+        var input = document.getElementById('chat-input');
+        var sendBtn = document.getElementById('chat-send');
+        var balanceEl = document.getElementById('balance-display');
+        var history = [];      // [{role: 'user'|'assistant', content: '...'}]
+        var busy = false;
+
+        function setBalance(value) {
+            if (value === undefined || value === null) return;
+            balanceEl.innerHTML = value + '<span class="currency">₽</span>';
+        }
+
+        function addMessage(text, cls) {
+            if (empty) { empty.remove(); empty = null; }
+            var div = document.createElement('div');
+            div.className = 'msg ' + cls;
+            div.textContent = text;          // textContent — защита от XSS
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+            return div;
+        }
+
+        function openChat() {
+            modal.style.display = 'block';
+            input.focus();
+        }
+
+        function closeChat() {
+            modal.style.display = 'none';
+        }
+
+        function autosize() {
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        }
+
+        async function sendMessage() {
+            var text = input.value.trim();
+            if (!text || busy) return;
+
+            busy = true;
+            sendBtn.disabled = true;
+            input.value = '';
+            autosize();
+
+            addMessage(text, 'msg-user');
+            var typing = addMessage('ИИ думает…', 'msg-ai msg-typing');
+
+            var controller = new AbortController();
+            var timer = setTimeout(function () { controller.abort(); }, 180000);
+
+            try {
+                var res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, history: history.slice(-6) }),
+                    signal: controller.signal
+                });
+
+                if (res.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                var data = {};
+                try { data = await res.json(); } catch (e) {}
+
+                if (res.ok && data.reply) {
+                    typing.className = 'msg msg-ai';
+                    typing.textContent = data.reply;
+                    history.push({ role: 'user', content: text });
+                    history.push({ role: 'assistant', content: data.reply });
+                    setBalance(data.new_balance);
+                } else {
+                    typing.className = 'msg msg-error';
+                    typing.textContent = data.error || ('Ошибка сервера (' + res.status + ')');
+                    setBalance(data.new_balance);
+                }
+            } catch (err) {
+                typing.className = 'msg msg-error';
+                typing.textContent = err.name === 'AbortError'
+                    ? 'ИИ слишком долго отвечает. Попробуйте ещё раз.'
+                    : 'Не удалось связаться с сервером.';
+            } finally {
+                clearTimeout(timer);
+                busy = false;
+                sendBtn.disabled = false;
+                box.scrollTop = box.scrollHeight;
+                input.focus();
+            }
+        }
+
+        document.getElementById('open-chat-btn').addEventListener('click', openChat);
+        document.getElementById('chat-close').addEventListener('click', closeChat);
+        modal.addEventListener('click', function (e) { if (e.target === modal) closeChat(); });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && modal.style.display === 'block') closeChat();
+        });
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('input', autosize);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    })();
+    </script>
+</body>
+</html>
